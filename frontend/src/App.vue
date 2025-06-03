@@ -995,7 +995,7 @@ import {
   ExportTasksByIDs, ExportTasksByTags, OpenSaveFileDialog, OpenFileDialog, 
   SaveTaskLogs, LoadTaskLogs, ClearTaskLogs, DeleteOldTaskLogs, EnsureLogDirectory
 } from '../wailsjs/go/main/App';
-import { debounce } from 'lodash-es';
+// import { debounce } from 'lodash-es';
 
 // Types
 interface Task {
@@ -2915,6 +2915,16 @@ async function deleteOldLogs() {
 function showTaskLogs(taskId: string) {
   currentTaskLogId.value = taskId;
   showTaskLogsModal.value = true;
+  
+  // 强制刷新日志显示
+  if (taskLogs.value[taskId] && taskLogs.value[taskId].length > 0) {
+    // 创建新的数组引用以触发Vue的响应式更新
+    const currentLogs = [...taskLogs.value[taskId]];
+    taskLogs.value[taskId] = [];
+    setTimeout(() => {
+      taskLogs.value[taskId] = currentLogs;
+    }, 0);
+  }
 }
 
 // Utility function for debouncing
@@ -2928,12 +2938,14 @@ function debounce(fn: Function, delay: number) {
       fn.apply(null, args);
       timeout = null;
     }, delay) as unknown as number;
-  };
 }
+
+  };
+
 
 // Mock file system functions for now (these would be replaced with actual Wails bindings)
 async function getHomeDir() {
-  return os.homedir ? os.homedir() : '.';
+  // return os.homedir ? os.homedir() : '.';
 }
 
 async function ensureDir(dir: string) {

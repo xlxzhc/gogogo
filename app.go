@@ -702,7 +702,11 @@ func (a *App) ExecuteTask(taskID string) string {
 
 		// Log the result
 		fmt.Printf("Task %s completed: %s\n", task.Name, result)
-		a.addTaskLog(taskID, fmt.Sprintf("执行结果: %s", truncateString(result, 500)))
+		truncatedResult := truncateString(result, 1000) // 增加截断长度至1000
+		a.addTaskLog(taskID, fmt.Sprintf("执行结果: %s", truncatedResult))
+
+		// 强制保存日志到磁盘
+		a.saveTaskLogsToDisk()
 	}()
 
 	return fmt.Sprintf("Started task: %s", task.Name)
@@ -840,21 +844,20 @@ func (a *App) ExecuteCardPackageWithContext(
 				// Send request
 				response := a.SendRequest(url, method, ck, data, headers, useVirtualIP)
 
+				// Log the response content
+				if taskID, ok := ctx.Value("taskID").(string); ok && taskID != "" {
+					logMessage := fmt.Sprintf("请求 %d 响应: %s", taskIndex+1, truncateString(response, 200))
+					a.addTaskLog(taskID, logMessage)
+				}
+
 				// Get task ID from context if available
 				if taskID, ok := ctx.Value("taskID").(string); ok && taskID != "" {
-					// Log the response for the task
-					a.addTaskLog(taskID, fmt.Sprintf("请求 %d 响应: %s", taskIndex+1, truncateString(response, 200)))
+					// Log that the request was completed
+					a.addTaskLog(taskID, fmt.Sprintf("请求 %d 完成", taskIndex+1))
 				}
 
-				// Update progress
-				progress.CurrentRequest++
-				if delay > 0 {
-					progress.DelayInfo = append(progress.DelayInfo, delay)
-				}
-				progress.ElapsedTime = time.Since(startTime).Milliseconds()
-
-				// Send result to channel
-				resultCh <- fmt.Sprintf("Request %d: %s", taskIndex+1, response)
+				// Add response to result channel
+				resultCh <- fmt.Sprintf("请求 %d 响应: %s", taskIndex+1, truncateString(response, 1000))
 			}
 		}(i)
 	}
@@ -891,6 +894,16 @@ func (a *App) ExecuteCardPackageWithContext(
 	} else {
 		summary = fmt.Sprintf("Completed %d requests in %dms (%.2f req/s)",
 			times, elapsedMs, float64(times)/(float64(elapsedMs)/1000))
+	}
+
+	// Add all responses to the summary if there are multiple requests
+	if times > 1 {
+		summary += "\n\n详细响应内容:\n" + strings.Join(results, "\n")
+	} else {
+		// For single request, include the response directly
+		if len(results) > 0 {
+			summary += ": " + strings.TrimPrefix(results[0], "请求 1 响应: ")
+		}
 	}
 
 	return summary
@@ -1216,6 +1229,9 @@ func (a *App) addTaskLog(taskID string, message string) {
 
 	logEntry := fmt.Sprintf("[%s] [%s] %s", dateStr, timeStr, message)
 	a.TaskLogs[taskID] = append(a.TaskLogs[taskID], logEntry)
+
+	// 同时输出到控制台便于调试
+	fmt.Println(logEntry)
 }
 
 // truncateString truncates a string to the specified length
